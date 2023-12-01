@@ -427,19 +427,3 @@ for i in range(n_output):
   torchvision.utils.save_image(imgs_sample[i], f'output/{i+1}.jpg')
 
 
-
-
-
-##########################################################################
-# TODO: Store your generate images in 5*5 Grid
-# Implementation A.1-3
-##########################################################################
-
-
-
-
-
-##########################################################################
-# TODO: Interpolation 3 pairs of z vectors and plot a 3*10 image.
-# Implementation A.1-4
-##########################################################################
