@@ -1,0 +1,8 @@
+pretrain: anime_v1/anime.pt
+model_store_path: anime_v2/anime.pt
+batch_size: 512
+n_epochs: 8001
+lr: 6e-05
+n_steps: 1000
+start_beta: 5e-05
+end_beta: 0.02

@@ -36,10 +36,12 @@ same_seeds(999)
 
 
 dataset       = "anime" # anime mnist
-workspace_dir = 'v1'
+workspace_dir = 'v4'
 os.makedirs(f'{dataset}_{workspace_dir}',exist_ok=False)
 
 save = 100
+
+pretrain = "anime_v3/anime.pt"
 
 if dataset == 'mnist':
     # Root directory for the MNIST dataset
@@ -62,10 +64,10 @@ os.makedirs(f'{dataset}_{workspace_dir}/log',exist_ok=False)
 batch_size = 512
 
 # Number of training epochs
-n_epochs = 8001
+n_epochs = 2001
 
 # Learning rate for optimizers
-lr = 2e-5
+lr = 1e-5
 
 # Number of the forward steps
 n_steps = 1000
@@ -78,6 +80,7 @@ end_beta = 2e-2
 
 
 f = open(f"{dataset}_{workspace_dir}/hyperparameter.txt", 'w')
+f.write(f'pretrain: {str(pretrain)}\n')
 f.write(f'model_store_path: {str(model_store_path)}\n')
 f.write(f'batch_size: {str(batch_size)}\n')
 f.write(f'n_epochs: {str(n_epochs)}\n')
@@ -138,7 +141,7 @@ def show_images(images, title=""):
                 frame.axes.get_yaxis().set_visible(False)
                 frame.axes.get_xaxis().set_visible(False)
                 temp = np.transpose(images[index], (1, 2, 0))
-                plt.imshow((temp+1)/2, cmap='gray')
+                plt.imshow((temp+1)/2, cmap='gray' if images[index].shape[0]==1 else None)
                 index += 1
     plt.show()
 
@@ -149,7 +152,7 @@ def show_images_of_next_batch(loader):
     features, labels = data
     show_images(features, "Images in a batch")
 
-# show_images_of_next_batch(dataloader)
+show_images_of_next_batch(dataloader)
 
 
 # Define the class of DDPM
@@ -251,7 +254,11 @@ class UNet(nn.Module):
                 nn.Conv2d(32, 32, 4, 2, 1)
             )
         else:
-            self.down3 = nn.Conv2d(32, 32, 4, 2, 1)
+            self.down3 = nn.Sequential(
+                nn.Conv2d(32, 32, 3, 1, 1),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(32, 32, 4, 2, 1),
+            )
 
         # The bottleneck
         self.time_step_encoder_mid = nn.Sequential(
@@ -275,7 +282,11 @@ class UNet(nn.Module):
                 nn.ConvTranspose2d(32, 32, 2, 1)
             )
         else:
-            self.up1 = nn.ConvTranspose2d(32, 32, 4, 2, 1)
+            self.up1 = nn.Sequential(
+                nn.ConvTranspose2d(32, 32, 4, 2, 1),
+                nn.LeakyReLU(0.2),
+                nn.ConvTranspose2d(32, 32, 3, 1, 1)
+            )
 
         self.time_step_encoder4 = nn.Sequential(
             nn.Linear(time_embedding_dim, 64),
@@ -350,6 +361,9 @@ ddpm_mnist = DDPM(image_shape=image_shape, n_steps=n_steps, start_beta=start_bet
 
 # Print the model
 print(ddpm_mnist)
+
+if pretrain:
+    ddpm_mnist.load_state_dict(torch.load(pretrain, map_location=device), strict=False)
 
 # Sample the first image from the next batch, then demonstrate the forward process.
 def show_forward(ddpm, loader, device):
@@ -554,7 +568,16 @@ show_images(images, "Final result")
 # TODO: Plot the loss values of DDPM for the MNIST dataset
 # Implementation B.1-2
 ######################################################################################
+plt.figure(figsize=(15, 15))
+plt.xlabel("Iterations")
+plt.ylabel('Loss')
+plt.grid()
 
+count = [i for i in range(len(loss_list))]
+plt.plot( count, loss_list, color='blue', label='D',linewidth=2, markersize=10)
+
+plt.legend(loc='lower right', prop={'size': 20})
+plt.savefig(f'{dataset}_{workspace_dir}/loss.png', bbox_inches='tight')
 
 ######################################################################################
 # TODO: Store your generate images in 5*5 grid for the MNIST dataset
