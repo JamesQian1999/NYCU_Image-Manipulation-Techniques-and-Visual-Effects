@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 import torch
 import torch.nn as nn
-from torch.optim import Adam
+import torch.optim as optim 
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, ToTensor, Lambda, Grayscale
 from torchvision.datasets import ImageFolder
@@ -36,25 +36,28 @@ same_seeds(999)
 
 
 dataset       = "anime" # anime mnist
-workspace_dir = 'v4'
+workspace_dir = 'v10'
 os.makedirs(f'{dataset}_{workspace_dir}',exist_ok=False)
 
-save = 100
 
-pretrain = "anime_v3/anime.pt"
+pretrain = "anime_v9/anime.pt" # "anime_v3/anime.pt"
 
 if dataset == 'mnist':
     # Root directory for the MNIST dataset
     dataset_path = f"mnist_dataset"
     # The path to save the model
     model_store_path = f"{dataset}_{workspace_dir}/mnist.pt"
+    milestones = [10, 30, 80, 130, 150]
     image_shape = (1,28,28)
+    save = 30
 elif dataset == 'anime':
     # Root directory for the MNIST dataset
     dataset_path = f"../hw2-1/anime_face_dataset"
     # The path to save the model
     model_store_path = f"{dataset}_{workspace_dir}/anime.pt"
+    milestones = [1000, 2000]
     image_shape = (3,64,64)
+    save = 50
 else:
     raise NotImplementedError()
 
@@ -64,7 +67,7 @@ os.makedirs(f'{dataset}_{workspace_dir}/log',exist_ok=False)
 batch_size = 512
 
 # Number of training epochs
-n_epochs = 2001
+n_epochs = 4001
 
 # Learning rate for optimizers
 lr = 1e-5
@@ -76,7 +79,7 @@ n_steps = 1000
 start_beta = 1e-4
 
 # End beta
-end_beta = 2e-2
+end_beta = 1e-2
 
 
 f = open(f"{dataset}_{workspace_dir}/hyperparameter.txt", 'w')
@@ -197,164 +200,327 @@ def time_embedding(n, d):
 
 
 # Define the class of U-Net
-class UNet(nn.Module):
-    def __init__(self, n_steps=1000, time_embedding_dim=256, shape = 28, channel = 1):
-        super(UNet, self).__init__()
+if dataset == 'mnist':
+    class UNet(nn.Module):
+        def __init__(self, n_steps=1000, time_embedding_dim=256, shape = 28, channel = 1):
+            super(UNet, self).__init__()
 
-        # Time embedding
-        self.time_step_embedding = nn.Embedding(n_steps, time_embedding_dim)
-        self.time_step_embedding.weight.data = time_embedding(n_steps, time_embedding_dim)
-        self.time_step_embedding.requires_grad_(False)
+            # Time embedding
+            self.time_step_embedding = nn.Embedding(n_steps, time_embedding_dim)
+            self.time_step_embedding.weight.data = time_embedding(n_steps, time_embedding_dim)
+            self.time_step_embedding.requires_grad_(False)
 
-        # The first half
-        self.time_step_encoder1 = nn.Sequential(
-            nn.Linear(time_embedding_dim, 1),
-            nn.SiLU(),
-            nn.Linear(1, 1)
-        )
-
-        self.block1 = nn.Sequential(
-            nn.LayerNorm((channel, shape, shape)),
-            nn.Conv2d(channel, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
-        self.down1 = nn.Conv2d(8, 8, 4, 2, 1)
-
-        self.time_step_encoder2 = nn.Sequential(
-            nn.Linear(time_embedding_dim, 8),
-            nn.SiLU(),
-            nn.Linear(8, 8)
-        )
-
-        self.block2 = nn.Sequential(
-            nn.LayerNorm((8, shape//2, shape//2)),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
-        self.down2 = nn.Conv2d(16, 16, 4, 2, 1)
-
-        self.time_step_encoder3 = nn.Sequential(
-            nn.Linear(time_embedding_dim, 16),
-            nn.SiLU(),
-            nn.Linear(16, 16)
-        )
-
-        self.block3 = nn.Sequential(
-            nn.LayerNorm((16, shape//4, shape//4)),
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
-        if shape == 28:
-            self.down3 = nn.Sequential(
-                nn.Conv2d(32, 32, 2, 1),
-                nn.LeakyReLU(0.2),
-                nn.Conv2d(32, 32, 4, 2, 1)
+            # The first half
+            self.time_step_encoder1 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 1),
+                nn.SiLU(),
+                nn.Linear(1, 1)
             )
-        else:
+
+            self.block1 = nn.Sequential(
+                nn.LayerNorm((channel, shape, shape)),
+                nn.Conv2d(channel, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+            self.down1 = nn.Conv2d(8, 8, 4, 2, 1)
+
+            self.time_step_encoder2 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 8),
+                nn.SiLU(),
+                nn.Linear(8, 8)
+            )
+
+            self.block2 = nn.Sequential(
+                nn.LayerNorm((8, shape//2, shape//2)),
+                nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+            self.down2 = nn.Conv2d(16, 16, 4, 2, 1)
+
+            self.time_step_encoder3 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 16),
+                nn.SiLU(),
+                nn.Linear(16, 16)
+            )
+
+            self.block3 = nn.Sequential(
+                nn.LayerNorm((16, shape//4, shape//4)),
+                nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+            if shape == 28:
+                self.down3 = nn.Sequential(
+                    nn.Conv2d(32, 32, 2, 1),
+                    nn.LeakyReLU(0.2),
+                    nn.Conv2d(32, 32, 4, 2, 1)
+                )
+            else:
+                self.down3 = nn.Sequential(
+                    nn.Conv2d(32, 32, 3, 1, 1),
+                    nn.LeakyReLU(0.2),
+                    nn.Conv2d(32, 32, 4, 2, 1),
+                )
+
+            # The bottleneck
+            self.time_step_encoder_mid = nn.Sequential(
+                nn.Linear(time_embedding_dim, 32),
+                nn.SiLU(),
+                nn.Linear(32, 32)
+            )
+
+            self.block_mid = nn.Sequential(
+                nn.LayerNorm((32, shape//8, shape//8)),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+
+            # The second half
+            if shape == 28:
+                self.up1 = nn.Sequential(
+                    nn.ConvTranspose2d(32, 32, kernel_size=4, stride=2, padding=1),
+                    nn.LeakyReLU(0.2),
+                    nn.ConvTranspose2d(32, 32, 2, 1)
+                )
+            else:
+                self.up1 = nn.Sequential(
+                    nn.ConvTranspose2d(32, 32, 4, 2, 1),
+                    nn.LeakyReLU(0.2),
+                    nn.ConvTranspose2d(32, 32, 3, 1, 1)
+                )
+
+            self.time_step_encoder4 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 64),
+                nn.SiLU(),
+                nn.Linear(64, 64)
+            )
+
+            self.block4 = nn.Sequential(
+                nn.LayerNorm((64, shape//4, shape//4)),
+                nn.Conv2d(64, 16, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+
+            self.up2 = nn.ConvTranspose2d(16, 16, 4, 2, 1)
+
+            self.time_step_encoder5 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 32),
+                nn.SiLU(),
+                nn.Linear(32, 32)
+            )
+
+            self.block5 = nn.Sequential(
+                nn.LayerNorm((32, shape//2, shape//2)),
+                nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+
+            self.up3 = nn.ConvTranspose2d(8, 8, 4, 2, 1)
+
+            self.time_step_encoder6 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 16),
+                nn.SiLU(),
+                nn.Linear(16, 16)
+            )
+            self.block6 = nn.Sequential(
+                nn.LayerNorm((16, shape, shape)),
+                nn.Conv2d(16, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.LayerNorm((8, shape, shape)),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+
+            self.final_layer = nn.Conv2d(8, channel, 3, 1, 1)
+
+        def forward(self, x, t):
+            t = self.time_step_embedding(t)
+            n = len(x)
+            output1 = self.block1(x + self.time_step_encoder1(t).reshape(n, -1, 1, 1))
+            output2 = self.block2(self.down1(output1) + self.time_step_encoder2(t).reshape(n, -1, 1, 1))
+            output3 = self.block3(self.down2(output2) + self.time_step_encoder3(t).reshape(n, -1, 1, 1))
+
+            output_mid = self.block_mid( self.down3(output3) + self.time_step_encoder_mid(t).reshape(n, -1, 1, 1))
+
+            output4 = torch.cat((output3, self.up1(output_mid)), dim=1)
+            output4 = self.block4(output4 + self.time_step_encoder4(t).reshape(n, -1, 1, 1))
+            output5 = torch.cat((output2, self.up2(output4)), dim=1)
+            output5 = self.block5(output5 + self.time_step_encoder5(t).reshape(n, -1, 1, 1))
+            output6 = torch.cat((output1, self.up3(output5)), dim=1)
+            output6 = self.block6(output6 + self.time_step_encoder6(t).reshape(n, -1, 1, 1))
+
+            output = self.final_layer(output6)
+            return output
+    
+else:  
+    class UNet(nn.Module):
+        def __init__(self, n_steps=1000, time_embedding_dim=256, shape = 28, channel = 1):
+            super(UNet, self).__init__()
+
+            # Time embedding
+            self.time_step_embedding = nn.Embedding(n_steps, time_embedding_dim)
+            self.time_step_embedding.weight.data = time_embedding(n_steps, time_embedding_dim)
+            self.time_step_embedding.requires_grad_(False)
+
+            # The first half
+            self.time_step_encoder1 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 1),
+                nn.SiLU(),
+                nn.Linear(1, 1)
+            )
+
+            self.block1 = nn.Sequential(
+                nn.LayerNorm((channel, shape, shape)),
+                nn.Conv2d(channel, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+            self.down1 = nn.Conv2d(8, 8, 4, 2, 1)
+
+            self.time_step_encoder2 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 8),
+                nn.SiLU(),
+                nn.Linear(8, 8)
+            )
+
+            self.block2 = nn.Sequential(
+                nn.LayerNorm((8, shape//2, shape//2)),
+                nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+            self.down2 = nn.Conv2d(16, 16, 4, 2, 1)
+
+            self.time_step_encoder3 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 16),
+                nn.SiLU(),
+                nn.Linear(16, 16)
+            )
+
+            self.block3 = nn.Sequential(
+                nn.LayerNorm((16, shape//4, shape//4)),
+                nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+ 
             self.down3 = nn.Sequential(
                 nn.Conv2d(32, 32, 3, 1, 1),
                 nn.LeakyReLU(0.2),
                 nn.Conv2d(32, 32, 4, 2, 1),
             )
 
-        # The bottleneck
-        self.time_step_encoder_mid = nn.Sequential(
-            nn.Linear(time_embedding_dim, 32),
-            nn.SiLU(),
-            nn.Linear(32, 32)
-        )
-
-        self.block_mid = nn.Sequential(
-            nn.LayerNorm((32, shape//8, shape//8)),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
-
-        # The second half
-        if shape == 28:
-            self.up1 = nn.Sequential(
-                nn.ConvTranspose2d(32, 32, kernel_size=4, stride=2, padding=1),
-                nn.LeakyReLU(0.2),
-                nn.ConvTranspose2d(32, 32, 2, 1)
+            # The bottleneck
+            self.time_step_encoder_mid = nn.Sequential(
+                nn.Linear(time_embedding_dim, 32),
+                nn.SiLU(),
+                nn.Linear(32, 32)
             )
-        else:
+
+            self.block_mid = nn.Sequential(
+                nn.LayerNorm((32, shape//8, shape//8)),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
+
+            # The second half
             self.up1 = nn.Sequential(
                 nn.ConvTranspose2d(32, 32, 4, 2, 1),
                 nn.LeakyReLU(0.2),
                 nn.ConvTranspose2d(32, 32, 3, 1, 1)
             )
 
-        self.time_step_encoder4 = nn.Sequential(
-            nn.Linear(time_embedding_dim, 64),
-            nn.SiLU(),
-            nn.Linear(64, 64)
-        )
+            self.time_step_encoder4 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 64),
+                nn.SiLU(),
+                nn.Linear(64, 64)
+            )
 
-        self.block4 = nn.Sequential(
-            nn.LayerNorm((64, shape//4, shape//4)),
-            nn.Conv2d(64, 16, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
+            self.block4 = nn.Sequential(
+                nn.LayerNorm((64, shape//4, shape//4)),
+                nn.Conv2d(64, 16, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
 
-        self.up2 = nn.ConvTranspose2d(16, 16, 4, 2, 1)
+            self.up2 = nn.ConvTranspose2d(16, 16, 4, 2, 1)
 
-        self.time_step_encoder5 = nn.Sequential(
-            nn.Linear(time_embedding_dim, 32),
-            nn.SiLU(),
-            nn.Linear(32, 32)
-        )
+            self.time_step_encoder5 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 32),
+                nn.SiLU(),
+                nn.Linear(32, 32)
+            )
 
-        self.block5 = nn.Sequential(
-            nn.LayerNorm((32, shape//2, shape//2)),
-            nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
+            self.block5 = nn.Sequential(
+                nn.LayerNorm((32, shape//2, shape//2)),
+                nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+            )
 
-        self.up3 = nn.ConvTranspose2d(8, 8, 4, 2, 1)
+            self.up3 = nn.ConvTranspose2d(8, 8, 4, 2, 1)
 
-        self.time_step_encoder6 = nn.Sequential(
-            nn.Linear(time_embedding_dim, 16),
-            nn.SiLU(),
-            nn.Linear(16, 16)
-        )
-        self.block6 = nn.Sequential(
-            nn.LayerNorm((16, shape, shape)),
-            nn.Conv2d(16, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-            nn.LayerNorm((8, shape, shape)),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
-            nn.LeakyReLU(0.2),
-        )
+            self.time_step_encoder6 = nn.Sequential(
+                nn.Linear(time_embedding_dim, 16),
+                nn.SiLU(),
+                nn.Linear(16, 16)
+            )
+            self.block6 = nn.Sequential(
+                nn.LayerNorm((16, shape, shape)),
+                nn.Conv2d(16, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.LayerNorm((8, shape, shape)),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                nn.LayerNorm((8, shape, shape)),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1),
+                nn.LeakyReLU(0.2),
+                
+            )
 
-        self.final_layer = nn.Conv2d(8, channel, 3, 1, 1)
+            self.final_layer = nn.Conv2d(8, channel, 3, 1, 1)
 
-    def forward(self, x, t):
-        t = self.time_step_embedding(t)
-        n = len(x)
-        output1 = self.block1(x + self.time_step_encoder1(t).reshape(n, -1, 1, 1))
-        output2 = self.block2(self.down1(output1) + self.time_step_encoder2(t).reshape(n, -1, 1, 1))
-        output3 = self.block3(self.down2(output2) + self.time_step_encoder3(t).reshape(n, -1, 1, 1))
+        def forward(self, x, t):
+            t = self.time_step_embedding(t)
+            n = len(x)
+            output1 = self.block1(x + self.time_step_encoder1(t).reshape(n, -1, 1, 1))
+            output2 = self.block2(self.down1(output1) + self.time_step_encoder2(t).reshape(n, -1, 1, 1))
+            output3 = self.block3(self.down2(output2) + self.time_step_encoder3(t).reshape(n, -1, 1, 1))
 
-        output_mid = self.block_mid( self.down3(output3) + self.time_step_encoder_mid(t).reshape(n, -1, 1, 1))
+            output_mid = self.block_mid( self.down3(output3) + self.time_step_encoder_mid(t).reshape(n, -1, 1, 1))
 
-        output4 = torch.cat((output3, self.up1(output_mid)), dim=1)
-        output4 = self.block4(output4 + self.time_step_encoder4(t).reshape(n, -1, 1, 1))
-        output5 = torch.cat((output2, self.up2(output4)), dim=1)
-        output5 = self.block5(output5 + self.time_step_encoder5(t).reshape(n, -1, 1, 1))
-        output6 = torch.cat((output1, self.up3(output5)), dim=1)
-        output6 = self.block6(output6 + self.time_step_encoder6(t).reshape(n, -1, 1, 1))
+            output4 = torch.cat((output3, self.up1(output_mid)), dim=1)
+            output4 = self.block4(output4 + self.time_step_encoder4(t).reshape(n, -1, 1, 1))
+            output5 = torch.cat((output2, self.up2(output4)), dim=1)
+            output5 = self.block5(output5 + self.time_step_encoder5(t).reshape(n, -1, 1, 1))
+            output6 = torch.cat((output1, self.up3(output5)), dim=1)
+            output6 = self.block6(output6 + self.time_step_encoder6(t).reshape(n, -1, 1, 1))
 
-        output = self.final_layer(output6)
-        return output
-    
+            output = self.final_layer(output6)
+            return output
+   
 
 # Build the DDPM
 ddpm_mnist = DDPM(image_shape=image_shape, n_steps=n_steps, start_beta=start_beta, end_beta=end_beta, device=device)
@@ -539,8 +705,9 @@ def trainer(ddpm, dataloader, n_epochs, optim, loss_funciton, device, model_stor
         # print(log_string)
     f.close()
 
-
-trainer(ddpm_mnist, dataloader, n_epochs=n_epochs, optim=Adam(ddpm_mnist.parameters(), lr), loss_funciton=nn.MSELoss(), device=device, model_store_path=model_store_path) 
+optimizer = optim.Adam(ddpm_mnist.parameters(), lr)
+lr_scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=milestones, gamma=0.5) 
+trainer(ddpm_mnist, dataloader, n_epochs=n_epochs, optim=optimizer, loss_funciton=nn.MSELoss(), device=device, model_store_path=model_store_path) 
 
 # Build the model
 ddpm_mnist = DDPM(image_shape=image_shape, n_steps=n_steps, device=device)
@@ -551,15 +718,14 @@ ddpm_mnist.load_state_dict(torch.load(model_store_path, map_location=device))
 # Change to evaluation mode
 ddpm_mnist.eval()
 
-
 images = generate_new_images(
-        ddpm_mnist,
-        n_samples=100,
-        device=device,
+        ddpm_mnist, 
+        n_samples = 100,
+        device = device, 
         gif_name=f"{dataset}_{workspace_dir}/{dataset}.gif",
-        height=image_shape[-1], width=image_shape[-1]
-    )
-show_images(images, "Final result")
+        height=image_shape[-1], width=image_shape[-1], channel=image_shape[0])
+
+# show_images(images, "Final result")
 
 
 # Image(open('mnist.gif','rb').read())
