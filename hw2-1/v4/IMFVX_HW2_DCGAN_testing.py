@@ -179,13 +179,13 @@ netG.to(device)
 ##########################################################################
 # Generate 100 images and make a grid to save them.
 n_output = 100
-fixed_noise = torch.randn(25, nz, 1, 1, device=device)
+fixed_noise = torch.randn(n_output, nz, 1, 1, device=device)
 imgs_sample = (netG(fixed_noise).data + 1) / 2.0
 
-grid_img = torchvision.utils.make_grid(imgs_sample[:25].cpu(), nrow=5)
+grid_img = torchvision.utils.make_grid(imgs_sample[:n_output].cpu(), nrow=int(n_output**0.5))
 plt.figure(figsize=(10,10))
 plt.imshow(grid_img.permute(1, 2, 0))
-plt.savefig('result.png', bbox_inches='tight')
+plt.savefig('result_tmp.png', bbox_inches='tight')
 
 
 
